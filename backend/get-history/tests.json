@@ -1,0 +1,17 @@
+{
+  "tests": [
+    {
+      "name": "Get download history",
+      "method": "GET",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "TestUser"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "history": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

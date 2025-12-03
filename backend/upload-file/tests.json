@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "Upload file",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "TestUser"
+      },
+      "body": {
+        "name": "test.pdf",
+        "size": 1024,
+        "type": "application/pdf",
+        "category": "Документы",
+        "content": "base64content"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "id": "number",
+        "name": "string",
+        "size": "number",
+        "category": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

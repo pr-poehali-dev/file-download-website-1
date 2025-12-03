@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Track download",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "TestUser"
+      },
+      "body": {
+        "fileId": 1
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": "boolean",
+        "downloads": "number"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

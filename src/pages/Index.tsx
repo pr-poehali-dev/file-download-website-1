@@ -1,37 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
-
-interface FileItem {
-  id: string;
-  name: string;
-  size: string;
-  type: string;
-  downloads: number;
-  uploadedBy: string;
-  uploadedDate: string;
-  category: string;
-}
-
-const mockFiles: FileItem[] = [
-  { id: '1', name: 'Presentation_2024.pdf', size: '2.4 MB', type: 'pdf', downloads: 1247, uploadedBy: 'Анна К.', uploadedDate: '2 дня назад', category: 'Документы' },
-  { id: '2', name: 'Project_Assets.zip', size: '45.8 MB', type: 'zip', downloads: 892, uploadedBy: 'Максим Р.', uploadedDate: '5 дней назад', category: 'Архивы' },
-  { id: '3', name: 'Tutorial_Video.mp4', size: '128 MB', type: 'video', downloads: 2341, uploadedBy: 'Ольга В.', uploadedDate: '1 неделю назад', category: 'Видео' },
-  { id: '4', name: 'Annual_Report.xlsx', size: '1.2 MB', type: 'excel', downloads: 654, uploadedBy: 'Дмитрий С.', uploadedDate: '3 дня назад', category: 'Документы' },
-  { id: '5', name: 'Design_Mockups.fig', size: '8.7 MB', type: 'figma', downloads: 1523, uploadedBy: 'Елена П.', uploadedDate: '4 дня назад', category: 'Дизайн' },
-  { id: '6', name: 'Source_Code.zip', size: '12.3 MB', type: 'zip', downloads: 1089, uploadedBy: 'Игорь М.', uploadedDate: '1 день назад', category: 'Архивы' },
-];
-
-const mockDownloadHistory = [
-  { id: '1', fileName: 'Presentation_2024.pdf', date: 'Сегодня, 14:32' },
-  { id: '2', fileName: 'Project_Assets.zip', date: 'Вчера, 09:15' },
-  { id: '3', fileName: 'Tutorial_Video.mp4', date: '28 ноября, 16:44' },
-];
+import { getFiles, uploadFile, trackDownload, getDownloadHistory, FileItem, DownloadHistoryItem } from '@/lib/api';
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,28 +15,141 @@ const Index = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'popular' | 'profile'>('popular');
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryItem[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const categories = ['Все', 'Документы', 'Архивы', 'Видео', 'Дизайн'];
 
-  const filteredFiles = mockFiles.filter(file => {
+  useEffect(() => {
+    loadFiles();
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    if (activeTab === 'profile') {
+      loadHistory();
+    }
+  }, [activeTab]);
+
+  const loadFiles = async () => {
+    try {
+      const data = await getFiles(selectedCategory);
+      setFiles(data);
+    } catch (error) {
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить список файлов',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const data = await getDownloadHistory();
+      setDownloadHistory(data);
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить историю',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const filteredFiles = files.filter(file => {
     const matchesSearch = file.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'Все' || file.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    return matchesSearch;
   });
 
-  const handleFileUpload = () => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    const category = selectedCategory === 'Все' ? 'Другое' : selectedCategory;
+    
     setIsUploading(true);
     setUploadProgress(0);
-    const interval = setInterval(() => {
+
+    const progressInterval = setInterval(() => {
       setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setIsUploading(false), 500);
-          return 100;
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return 90;
         }
         return prev + 10;
       });
     }, 200);
+
+    try {
+      await uploadFile(file, category);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      toast({
+        title: 'Успешно загружено! 🎉',
+        description: `Файл ${file.name} успешно загружен`,
+      });
+
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+        loadFiles();
+      }, 1000);
+    } catch (error) {
+      clearInterval(progressInterval);
+      setIsUploading(false);
+      setUploadProgress(0);
+      toast({
+        title: 'Ошибка загрузки',
+        description: 'Не удалось загрузить файл',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      await trackDownload(fileId);
+      toast({
+        title: 'Скачивание начато',
+        description: `Файл ${fileName} готов к скачиванию`,
+      });
+      loadFiles();
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось отследить скачивание',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileUpload(file);
+    }
   };
 
   const getFileIcon = (type: string) => {
@@ -113,7 +202,14 @@ const Index = () => {
       <main className="container mx-auto px-4 py-8">
         {activeTab === 'popular' ? (
           <div className="space-y-8 animate-fade-in">
-            <div className="glass rounded-2xl p-8 border">
+            <div 
+              className={`glass rounded-2xl p-8 border transition-all duration-300 ${
+                isDragging ? 'border-primary border-2 bg-primary/5' : ''
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="text-center space-y-2">
                   <h2 className="text-4xl font-heading font-bold">
@@ -135,14 +231,22 @@ const Index = () => {
                 </div>
 
                 {!isUploading && (
-                  <Button
-                    onClick={handleFileUpload}
-                    size="lg"
-                    className="w-full h-14 text-lg rounded-xl gap-2 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity"
-                  >
-                    <Icon name="Upload" size={20} />
-                    Загрузить файл
-                  </Button>
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      size="lg"
+                      className="w-full h-14 text-lg rounded-xl gap-2 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity"
+                    >
+                      <Icon name="Upload" size={20} />
+                      {isDragging ? 'Отпустите файл для загрузки' : 'Загрузить файл'}
+                    </Button>
+                  </>
                 )}
 
                 {isUploading && (
@@ -171,55 +275,67 @@ const Index = () => {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredFiles.map((file, index) => (
-                  <Card 
-                    key={file.id} 
-                    className="glass group hover:shadow-xl hover:scale-[1.02] transition-all duration-300 p-6 space-y-4 cursor-pointer"
-                    style={{ animationDelay: `${index * 0.1}s` }}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Icon name={getFileIcon(file.type)} className="text-primary" size={24} />
+              {filteredFiles.length === 0 ? (
+                <Card className="glass p-12 text-center">
+                  <Icon name="Inbox" className="mx-auto mb-4 text-muted-foreground" size={64} />
+                  <h3 className="text-xl font-heading font-semibold mb-2">Файлов пока нет</h3>
+                  <p className="text-muted-foreground">Загрузите первый файл или измените категорию</p>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredFiles.map((file, index) => (
+                    <Card 
+                      key={file.id} 
+                      className="glass group hover:shadow-xl hover:scale-[1.02] transition-all duration-300 p-6 space-y-4 cursor-pointer"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Icon name={getFileIcon(file.type)} className="text-primary" size={24} />
+                        </div>
+                        <Badge variant="secondary" className="rounded-full">
+                          {file.category}
+                        </Badge>
                       </div>
-                      <Badge variant="secondary" className="rounded-full">
-                        {file.category}
-                      </Badge>
-                    </div>
 
-                    <div className="space-y-1">
-                      <h3 className="font-heading font-semibold text-lg truncate group-hover:text-primary transition-colors">
-                        {file.name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">{file.size}</p>
-                    </div>
+                      <div className="space-y-1">
+                        <h3 className="font-heading font-semibold text-lg truncate group-hover:text-primary transition-colors">
+                          {file.name}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">{file.size}</p>
+                      </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-7 h-7">
-                          <AvatarFallback className="text-xs bg-secondary">
-                            {file.uploadedBy.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="text-xs">
-                          <p className="font-medium">{file.uploadedBy}</p>
-                          <p className="text-muted-foreground">{file.uploadedDate}</p>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-7 h-7">
+                            <AvatarFallback className="text-xs bg-secondary">
+                              {file.uploadedBy.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="text-xs">
+                            <p className="font-medium">{file.uploadedBy}</p>
+                            <p className="text-muted-foreground">{file.uploadedDate}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <Icon name="Download" size={14} />
+                          <span className="text-xs font-semibold">{file.downloads}</span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Icon name="Download" size={14} />
-                        <span className="text-xs font-semibold">{file.downloads}</span>
-                      </div>
-                    </div>
-
-                    <Button className="w-full gap-2" variant="outline">
-                      <Icon name="Download" size={16} />
-                      Скачать
-                    </Button>
-                  </Card>
-                ))}
-              </div>
+                      <Button 
+                        className="w-full gap-2" 
+                        variant="outline"
+                        onClick={() => handleDownload(file.id, file.name)}
+                      >
+                        <Icon name="Download" size={16} />
+                        Скачать
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -236,11 +352,11 @@ const Index = () => {
                   <div className="flex items-center gap-4 mt-3">
                     <div className="flex items-center gap-2 text-sm">
                       <Icon name="Upload" size={16} className="text-primary" />
-                      <span className="font-semibold">12 файлов</span>
+                      <span className="font-semibold">{files.length} файлов</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Icon name="Download" size={16} className="text-secondary" />
-                      <span className="font-semibold">347 скачиваний</span>
+                      <span className="font-semibold">{downloadHistory.length} скачиваний</span>
                     </div>
                   </div>
                 </div>
@@ -257,32 +373,44 @@ const Index = () => {
                   <Icon name="History" size={20} className="text-primary" />
                   История скачиваний
                 </h3>
-                <Button variant="ghost" size="sm">
-                  Очистить
+                <Button variant="ghost" size="sm" onClick={loadHistory}>
+                  Обновить
                 </Button>
               </div>
 
               <div className="space-y-3">
-                {mockDownloadHistory.map((item) => (
-                  <div 
-                    key={item.id} 
-                    className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Icon name="FileText" className="text-primary" size={18} />
-                      </div>
-                      <div>
-                        <p className="font-medium">{item.fileName}</p>
-                        <p className="text-sm text-muted-foreground">{item.date}</p>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="ghost" className="gap-2">
-                      <Icon name="Download" size={16} />
-                      Повторить
-                    </Button>
+                {downloadHistory.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Icon name="History" className="mx-auto mb-2" size={48} />
+                    <p>История пуста</p>
                   </div>
-                ))}
+                ) : (
+                  downloadHistory.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Icon name="FileText" className="text-primary" size={18} />
+                        </div>
+                        <div>
+                          <p className="font-medium">{item.fileName}</p>
+                          <p className="text-sm text-muted-foreground">{item.date}</p>
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="gap-2"
+                        onClick={() => handleDownload(item.id, item.fileName)}
+                      >
+                        <Icon name="Download" size={16} />
+                        Повторить
+                      </Button>
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 
@@ -295,9 +423,9 @@ const Index = () => {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Использовано</span>
-                  <span className="font-semibold">2.8 GB из 10 GB</span>
+                  <span className="font-semibold">{files.length} из 100 файлов</span>
                 </div>
-                <Progress value={28} className="h-3" />
+                <Progress value={(files.length / 100) * 100} className="h-3" />
               </div>
 
               <Button className="w-full gap-2" variant="outline">

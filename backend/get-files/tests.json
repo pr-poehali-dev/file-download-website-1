@@ -1,0 +1,24 @@
+{
+  "tests": [
+    {
+      "name": "Get all files",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "files": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get files by category",
+      "method": "GET",
+      "path": "/?category=Документы",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "files": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
